@@ -3,7 +3,8 @@
 **Course:** Information Security, semester project
 **Author:** *[your name, student ID]*
 **Date:** *[submission date]*
-**Code:** this repository. Every figure and number below can be regenerated from it (Appendix A).
+**Code:** https://github.com/rayannkhn/airlock · **Live app:** https://rayannkhn.github.io/airlock/
+Every figure and number below can be regenerated from the repository (Appendix A).
 
 > **Draft status.** Sections 1–8 are complete. Before submission:
 > 1. fill in the bracketed *[ ]* fields;

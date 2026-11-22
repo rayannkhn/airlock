@@ -21,6 +21,8 @@ python3 -m venv .venv
 
 ## The AirLock app: any device to any device
 
+**Live app: https://rayannkhn.github.io/airlock/** (open it once, install it, then it works offline)
+
 `web/` is an installable app (a PWA) that runs on **phones, tablets and
 laptops**. Any two devices can pair, send and receive in either direction,
 using only the screen and the camera. Open it once, use "Add to Home
