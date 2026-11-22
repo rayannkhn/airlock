@@ -1,0 +1,5 @@
+hold_frames,codes_per_second,file_bytes,packets,wire_bytes,overhead_pct,one_pass_seconds,video_seconds_to_complete,goodput_bytes_per_s,video_mb_per_loop
+4,7.5,2000,16,3073,53.6,2.13,2.03,983.6,2.18
+6,5.0,2000,16,3073,53.6,3.2,3.03,659.3,2.39
+8,3.75,2000,16,3073,53.6,4.27,4.03,495.9,3.23
+12,2.5,2000,16,3073,53.6,6.4,6.03,331.5,3.01

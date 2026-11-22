@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airlock"
+version = "0.1.0"
+description = "Secure air-gapped file transfer over sound, animated QR and light"
+requires-python = ">=3.11"
+dependencies = ["cryptography>=43.0"]
+
+[project.scripts]
+airlock = "airlock.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["airlock*"]
+
+[tool.setuptools.package-data]
+"airlock.ui" = ["static/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+# Never commit key material or received files
+keys/
+*.pem
+received/
+results/live/keys/
+results/live/*.mp4
+results/live/*.html
+results/live/*.gif
+.claude/
+web/tests/node_modules/

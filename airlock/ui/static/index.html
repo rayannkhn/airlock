@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AirLock</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #14171c; --ink-2: #4b5260; --ink-3: #7a8190;
+    --line: #e3e6eb; --accent: #2a62d6; --accent-ink: #ffffff; --accent-soft: #e8effc;
+    --ok: #12804a; --ok-soft: #e5f5ec; --bad: #c43030; --bad-soft: #fbeaea;
+    --ask: #9a6400; --ask-soft: #fdf3df; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Ubuntu, sans-serif; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1180px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .logo { font-weight: 800; font-size: 22px; letter-spacing: -0.02em; }
+  .logo span { color: var(--accent); }
+  nav { display: flex; gap: 6px; flex-wrap: wrap; }
+  nav button { border: 0; background: transparent; padding: 10px 16px; border-radius: 10px; font: inherit;
+               font-weight: 600; color: var(--ink-2); cursor: pointer; }
+  nav button[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); }
+  nav button:hover { color: var(--ink); }
+  .who { margin-left: auto; display: flex; gap: 10px; font-size: 13px; color: var(--ink-3); }
+  .who b { color: var(--ink-2); }
+  main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 60px; }
+  section[hidden] { display: none; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .lead { color: var(--ink-2); margin: 0 0 24px; max-width: 760px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr; } .who { display: none; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+  .card h2 { font-size: 17px; margin: 0 0 12px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 12px; padding: 14px 22px;
+         font: inherit; font-weight: 700; cursor: pointer; background: var(--accent); color: var(--accent-ink); text-decoration: none; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.secondary { background: var(--accent-soft); color: var(--accent); }
+  .btn.quiet { background: transparent; color: var(--ink-2); border: 1px solid var(--line); }
+  .btn.ok { background: var(--ok); } .btn.bad { background: var(--bad); }
+  .btn:disabled { opacity: .45; cursor: default; filter: none; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .drop { display: block; border: 2px dashed var(--line); border-radius: var(--radius); padding: 34px 20px; text-align: center;
+          color: var(--ink-2); cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop strong { display: block; font-size: 18px; color: var(--ink); margin-bottom: 4px; }
+  .code { font: 800 44px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .06em;
+          color: var(--ink); background: var(--bg); border-radius: 12px; padding: 16px; text-align: center; margin: 8px 0 4px; }
+  .muted { color: var(--ink-3); font-size: 14px; }
+  ol.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+  ol.steps li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--bg); }
+  ol.steps li .ic { flex: 0 0 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+                    font-weight: 800; font-size: 14px; color: #fff; background: var(--ink-3); }
+  ol.steps li.ok .ic { background: var(--ok); } ol.steps li.bad .ic { background: var(--bad); }
+  ol.steps li.ask .ic { background: var(--ask); } ol.steps li.bad { background: var(--bad-soft); }
+  ol.steps li.ask { background: var(--ask-soft); }
+  .qrbox { background: #fff; border-radius: 12px; display: grid; place-items: center; aspect-ratio: 1; border: 1px solid var(--line); }
+  .qrbox img { width: 92%; image-rendering: pixelated; }
+  .screen { position: relative; width: 100%; aspect-ratio: 4/3; background: #111; border-radius: 12px; overflow: hidden; }
+  .screen span { position: absolute; inset: 0; display: grid; place-items: center; color: #9aa1ad; font-size: 15px; text-align: center; padding: 20px; }
+  .preview { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; visibility: hidden; }
+  .progress { height: 14px; background: var(--bg); border-radius: 99px; overflow: hidden; margin: 10px 0 4px; }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .25s; }
+  .banner { border-radius: 12px; padding: 16px 18px; font-weight: 700; margin-top: 14px; }
+  .banner.ok { background: var(--ok-soft); color: var(--ok); } .banner.bad { background: var(--bad-soft); color: var(--bad); }
+  .confirm { border: 2px solid var(--ask); background: var(--ask-soft); border-radius: var(--radius); padding: 18px; margin-top: 14px; }
+  .attacks { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
+  .atk h3 { margin: 0 0 8px; font-size: 17px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  .badge { font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 99px; background: var(--bg); color: var(--ink-3); white-space: nowrap; }
+  .badge.pass { background: var(--ok-soft); color: var(--ok); } .badge.fail { background: var(--bad-soft); color: var(--bad); }
+  .atk p { margin: 4px 0; color: var(--ink-2); font-size: 15px; }
+  .atk .label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); margin-top: 10px; }
+  details { margin-top: 10px; } summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 14px; }
+  pre { white-space: pre-wrap; font-size: 12px; background: var(--bg); padding: 10px; border-radius: 8px; max-height: 300px; overflow: auto; }
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin: 8px 0 24px; }
+  @media (max-width: 880px) { .flow { grid-template-columns: 1fr; } }
+  .flow div { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .flow b { display: block; font-size: 30px; line-height: 1; margin-bottom: 8px; }
+  .flow h3 { margin: 0 0 6px; font-size: 16px; } .flow p { margin: 0; color: var(--ink-2); font-size: 14px; }
+  dl { display: grid; grid-template-columns: 200px 1fr; gap: 10px 16px; margin: 0; }
+  dt { font-weight: 700; } dd { margin: 0; color: var(--ink-2); }
+  @media (max-width: 880px) { dl { grid-template-columns: 1fr; } }
+  .foot { margin-top: 36px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="logo">Air<span>Lock</span></div>
+    <nav role="tablist" aria-label="Sections">
+      <button role="tab" data-tab="how" aria-selected="true">How it works</button>
+      <button role="tab" data-tab="send">1 · Send</button>
+      <button role="tab" data-tab="receive">2 · Receive</button>
+      <button role="tab" data-tab="attacks">3 · Attacks</button>
+    </nav>
+    <div class="who" id="who"></div>
+  </div>
+</header>
+
+<main>
+  <!-- HOW IT WORKS ------------------------------------------------------- -->
+  <section id="how">
+    <h1>Send a file with light, safely</h1>
+    <p class="lead">Alice sends Bob a file <b>without Wi-Fi, Bluetooth or cables</b>: her phone plays the file as QR codes, and Bob's laptop camera reads them.
+      Anyone in the room can film that screen, so the file is <b>locked</b> so that only Bob can open it, and <b>sealed</b> so that Bob knows it came from Alice.</p>
+    <div class="flow">
+      <div><b>🔒</b><h3>Lock</h3><p>The file is encrypted with a brand-new key that only Bob's laptop can recreate.</p></div>
+      <div><b>✍️</b><h3>Seal</h3><p>Alice signs it, so any change to it, or a fake sender, is detected.</p></div>
+      <div><b>▦</b><h3>Show</h3><p>The locked file is cut into small pieces, each shown as one QR code in a looping video.</p></div>
+      <div><b>📷</b><h3>Check</h3><p>Bob's laptop checks the seal, the date and that this transfer is new, then unlocks every piece.</p></div>
+      <div><b>✅</b><h3>Confirm</h3><p>Both screens show the same short code. Only if a person confirms it is the file saved.</p></div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h2>What an attacker can do, and why it fails</h2>
+        <dl>
+          <dt>Film the screen</dt><dd>Gets only scrambled data; the key never appears on screen.</dd>
+          <dt>Pretend to be Alice</dt><dd>Can't make Alice's signature; Bob only trusts keys checked in person.</dd>
+          <dt>Change the data</dt><dd>Every piece carries a tamper seal; changed pieces are thrown away.</dd>
+          <dt>Replay an old video</dt><dd>Bob remembers what he already received, and old videos expire.</dd>
+          <dt>Stop it halfway</dt><dd>Nothing is saved until the whole file has been checked.</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h2>The technical names (for questions)</h2>
+        <dl>
+          <dt>Lock</dt><dd>X25519 key exchange + AES-256-GCM encryption</dd>
+          <dt>Seal</dt><dd>Ed25519 digital signature</dd>
+          <dt>Tamper seal per piece</dt><dd>GCM authentication tag (header included)</dd>
+          <dt>Whole-file check</dt><dd>SHA-256 fingerprint, signed by Alice</dd>
+          <dt>Short code</dt><dd>32-bit verification code derived from the session key</dd>
+        </dl>
+      </div>
+    </div>
+    <p style="margin-top:24px"><button class="btn" data-go="send">Start: send a file →</button></p>
+  </section>
+
+  <!-- SEND --------------------------------------------------------------- -->
+  <section id="send" hidden>
+    <h1>1 · Alice sends</h1>
+    <p class="lead">Pick any small file. AirLock locks it for Bob, seals it with Alice's signature, and turns it into a QR-code video.</p>
+    <div class="grid">
+      <div class="card">
+        <label class="drop" id="drop">
+          <strong>Choose a file</strong>or drop it here (small files work best, under 10 KB)
+          <input type="file" id="file" hidden>
+        </label>
+        <div id="sendResult" hidden>
+          <h2 style="margin-top:20px">Verification code</h2>
+          <div class="code" id="sendCode"></div>
+          <p class="muted">Bob's screen must show exactly this code at the end.</p>
+          <h2 style="margin-top:18px">What just happened</h2>
+          <ol class="steps" id="sendSteps"></ol>
+        </div>
+      </div>
+      <div class="card">
+        <h2>The QR video <span class="muted" id="frameNo"></span></h2>
+        <div class="qrbox"><img id="qr" alt="QR code animation of the encrypted file"></div>
+        <div id="sendActions" hidden>
+          <p class="muted" style="margin:12px 0">Copy this to the phone with a USB cable, open it in the gallery or browser, and show it fullscreen to the webcam. It loops by itself.</p>
+          <div class="row">
+            <a class="btn" href="/api/download/gif">⬇ For the phone (.gif, plays everywhere)</a>
+            <button class="btn quiet" data-go="receive">Next: receive →</button>
+          </div>
+          <p class="muted" style="margin-top:10px">Other formats: <a href="/api/download/html">web page (.html)</a> ·
+            <a href="/api/download/mp4" id="dlMp4">video (.mp4)</a>, which needs a phone that plays MPEG-4 video.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RECEIVE ------------------------------------------------------------ -->
+  <section id="receive" hidden>
+    <h1>2 · Bob receives</h1>
+    <p class="lead">Press <b>Start camera</b>, then play the video on the phone, about 20–40 cm from the webcam. Each check below ticks off as it happens.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="screen"><span id="screenMsg">The camera picture appears here after you press Start.</span><img class="preview" id="preview" alt="Camera preview"></div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn" id="startCam">▶ Start camera</button>
+          <label class="btn secondary">Use a video or GIF file<input type="file" id="videoFile" accept="video/*,image/gif" hidden></label>
+          <button class="btn quiet" id="stop" disabled>Stop</button>
+        </div>
+        <div class="progress" aria-hidden="true"><div id="bar"></div></div>
+        <p class="muted" id="count">Not started.</p>
+      </div>
+      <div class="card">
+        <h2>Checks</h2>
+        <ol class="steps" id="recvSteps"><li><span class="ic">•</span><span>Waiting to start.</span></li></ol>
+        <div class="confirm" id="confirm" hidden>
+          <b>Does Alice's screen show this code?</b>
+          <div class="code" id="recvCode"></div>
+          <div class="row"><button class="btn ok" id="yes">✓ Yes, they match</button><button class="btn bad" id="no">✗ No, different</button></div>
+        </div>
+        <div id="recvBanner"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ATTACKS ------------------------------------------------------------ -->
+  <section id="attacks" hidden>
+    <h1>3 · Six attacks, run live</h1>
+    <p class="lead">Each attack is scripted and runs in a fraction of a second. The second one attacks a version <b>without</b> signatures, to show why they matter.</p>
+    <p><button class="btn" id="runAttacks">▶ Run all 6 attacks</button> <span class="muted" id="atkSummary"></span></p>
+    <div class="attacks" id="atkCards"></div>
+  </section>
+
+  <div class="foot">
+    <span class="muted" id="recvDir"></span>
+    <button class="btn quiet" id="reset">↺ Reset demo (new keys, forget past transfers)</button>
+  </div>
+</main>
+
+<script>
+const H = { "X-AirLock": "1" };  // required on every action (CSRF protection)
+const $ = (id) => document.getElementById(id);
+
+// ---------------------------------------------------------------- tabs
+function show(tab) {
+  document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === tab));
+  document.querySelectorAll("main > section").forEach(s => s.hidden = s.id !== tab);
+  try { localStorage.setItem("airlock-tab", tab); } catch (e) {}
+}
+document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => show(b.dataset.tab));
+document.querySelectorAll("[data-go]").forEach(b => b.onclick = () => show(b.dataset.go));
+try { const t = localStorage.getItem("airlock-tab"); if (t && $(t)) show(t); } catch (e) {}
+
+function stepList(el, steps) {
+  el.innerHTML = "";
+  for (const s of steps) {
+    const li = document.createElement("li");
+    li.className = s.kind;
+    const ic = { ok: "✓", bad: "✗", ask: "?", info: "•" }[s.kind] || "•";
+    li.innerHTML = `<span class="ic">${ic}</span><span></span>`;
+    li.lastChild.textContent = s.text;
+    el.appendChild(li);
+  }
+}
+
+async function overview() {
+  const r = await fetch("/api/overview"); const o = await r.json();
+  $("who").innerHTML = `<span>Alice <b>${o.alice.slice(0, 9)}…</b></span><span>Bob <b>${o.bob.slice(0, 9)}…</b></span>`;
+  $("recvDir").textContent = `Received files go to ${o.received_dir}`;
+}
+overview();
+
+// ---------------------------------------------------------------- send
+let anim = null;
+async function sendFile(file) {
+  if (!file) return;
+  $("drop").querySelector("strong").textContent = "Locking and sealing " + file.name + "…";
+  const r = await fetch("/api/send", { method: "POST", headers: { ...H, "X-Filename": encodeURIComponent(file.name) }, body: file });
+  const d = await r.json();
+  if (!r.ok) { $("drop").querySelector("strong").textContent = d.error || "Failed"; return; }
+  $("drop").querySelector("strong").textContent = "Choose another file";
+  $("sendResult").hidden = false; $("sendActions").hidden = false;
+  $("sendCode").textContent = d.code;
+  stepList($("sendSteps"), [
+    { kind: "ok", text: `Locked "${d.filename}" (${d.size} bytes) with a fresh one-time key that only Bob can recreate.` },
+    { kind: "ok", text: "Sealed with Alice's signature, so nobody can change it or pretend to be her." },
+    { kind: "ok", text: `Split into ${d.chunks} encrypted pieces + 1 description + 1 seal = ${d.packets} QR codes.` },
+    { kind: "info", text: "The video loops, so a code the camera misses simply comes round again." },
+  ]);
+  if (anim) clearInterval(anim);
+  let i = 0;
+  const tick = () => { $("qr").src = d.frames[i]; $("frameNo").textContent = `· code ${i + 1} of ${d.frames.length}`; i = (i + 1) % d.frames.length; };
+  tick(); anim = setInterval(tick, 1000 / d.codes_per_second);
+}
+$("file").onchange = (e) => sendFile(e.target.files[0]);
+const drop = $("drop");
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); sendFile(e.dataTransfer.files[0]); };
+$("dlMp4").onclick = () => { $("dlMp4").textContent = "preparing video…"; setTimeout(() => $("dlMp4").textContent = "video (.mp4)", 6000); };
+
+// ---------------------------------------------------------------- receive
+let polling = null, previewOn = false;
+function startPreview() {
+  previewOn = true;
+  const img = $("preview");
+  const next = () => { if (!previewOn) return; img.src = "/api/receive/frame.jpg?t=" + Date.now(); };
+  img.onload = () => { img.style.visibility = "visible"; $("screenMsg").hidden = true; setTimeout(next, 120); };
+  img.onerror = () => setTimeout(next, 400);
+  next();
+}
+async function startReceive(body) {
+  $("recvBanner").innerHTML = ""; $("confirm").hidden = true;
+  const url = body ? "/api/receive/video" : "/api/receive/camera";
+  const r = await fetch(url, { method: "POST", headers: H, body: body || null });
+  if (!r.ok) { const d = await r.json(); banner("bad", d.error); return; }
+  $("stop").disabled = false; $("startCam").disabled = true;
+  startPreview();
+  if (polling) clearInterval(polling);
+  polling = setInterval(poll, 300);
+}
+function banner(kind, text) { $("recvBanner").innerHTML = `<div class="banner ${kind}"></div>`; $("recvBanner").firstChild.textContent = text; }
+async function poll() {
+  const s = await (await fetch("/api/receive/status")).json();
+  stepList($("recvSteps"), s.steps);
+  const pct = s.total ? Math.round(100 * s.received / s.total) : 0;
+  $("bar").style.width = pct + "%";
+  $("count").textContent = s.total ? `${s.received} of ${s.total} pieces received (${pct}%) · ${s.codes_seen} QR reads` : (s.codes_seen ? `${s.codes_seen} QR reads` : "Looking for QR codes…");
+  if (s.phase === "confirm") { $("confirm").hidden = false; $("recvCode").textContent = s.code; }
+  if (s.phase === "saved" || s.phase === "failed" || s.phase === "idle") {
+    clearInterval(polling); polling = null; previewOn = false;
+    $("confirm").hidden = true; $("stop").disabled = true; $("startCam").disabled = false;
+    if (s.phase === "saved") { banner("ok", `✓ File received and verified: ${s.saved_as}`); overview(); }
+    if (s.phase === "failed") banner("bad", "✗ " + s.error);
+  }
+}
+$("startCam").onclick = () => startReceive(null);
+$("videoFile").onchange = (e) => { const f = e.target.files[0]; if (f) startReceive(f); e.target.value = ""; };
+$("stop").onclick = () => fetch("/api/receive/stop", { method: "POST", headers: H });
+$("yes").onclick = () => { $("confirm").hidden = true; fetch("/api/receive/yes", { method: "POST", headers: H }); };
+$("no").onclick = () => { $("confirm").hidden = true; fetch("/api/receive/no", { method: "POST", headers: H }); };
+
+// ---------------------------------------------------------------- attacks
+const ATTACKS = {
+  eavesdrop: ["Eavesdropper", "Eve films every QR code of a transfer.", "She gets only random-looking bytes: no text, no filename, no key."],
+  mitm_insecure: ["Man-in-the-middle, no signatures", "Mallory secretly swaps in her own keys between Alice and Bob.", "The attack WORKS here: she reads the message and changes “100 USD” to “9999 USD”. This shows why AirLock signs everything."],
+  mitm_airlock: ["Man-in-the-middle vs AirLock", "The same swap against AirLock, in 5 variations.", "Blocked: the forged keys fail the signature check. Even with all checks switched off, the two codes differ and Bob says no."],
+  replay: ["Replay", "Mallory replays an old recording, or edits its date.", "Rejected: already received, or too old. Editing the date breaks the signature."],
+  tamper: ["Tampering", "Mallory flips bits in the pieces and fixes the checksums.", "Every changed piece fails its tamper seal and is thrown away. The real file still arrives intact."],
+  truncate: ["Cut off halfway", "The video stops at 50%, at 99%, or the connection drops.", "Nothing is ever saved: no half files."],
+};
+function renderAttacks(results) {
+  const box = $("atkCards"); box.innerHTML = "";
+  for (const key of Object.keys(ATTACKS)) {
+    const [title, tries, result] = ATTACKS[key];
+    const r = results ? results.find(x => x.key === key) : null;
+    const badge = !r ? `<span class="badge">not run</span>` : r.passed ? `<span class="badge pass">${key === "mitm_insecure" ? "PASS · attack works, as expected" : "PASS · attack blocked"}</span>` : `<span class="badge fail">FAIL</span>`;
+    const card = document.createElement("div");
+    card.className = "card atk";
+    card.innerHTML = `<h3><span></span>${badge}</h3><div class="label">The attacker tries</div><p></p><div class="label">What happens</div><p></p>` + (r ? `<details><summary>Show the technical log</summary><pre></pre></details>` : "");
+    card.querySelector("h3 span").textContent = title;
+    card.querySelectorAll("p")[0].textContent = tries;
+    card.querySelectorAll("p")[1].textContent = result;
+    if (r) card.querySelector("pre").textContent = r.log;
+    box.appendChild(card);
+  }
+}
+renderAttacks(null);
+$("runAttacks").onclick = async () => {
+  $("runAttacks").disabled = true; $("atkSummary").textContent = "Running…";
+  const r = await fetch("/api/attacks", { method: "POST", headers: H }); const results = await r.json();
+  renderAttacks(results);
+  const passed = results.filter(x => x.passed).length;
+  $("atkSummary").textContent = `${passed}/${results.length} passed`;
+  $("runAttacks").disabled = false;
+};
+
+// ---------------------------------------------------------------- reset
+$("reset").onclick = async () => {
+  if (!confirm("Create new keys for Alice and Bob and forget past transfers? Videos made before this will no longer work.")) return;
+  await fetch("/api/reset", { method: "POST", headers: H });
+  location.reload();
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+scheme,public_key_bytes,signature_bytes,security_bits
+X25519,32,,128
+Ed25519,32,64,128
+RSA-2048,294,256,112
+RSA-3072,422,384,128

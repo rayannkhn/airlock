@@ -1,0 +1,5 @@
+python 3.13.7
+platform Linux-6.17.0-41-generic-x86_64-with-glibc2.42
+processor x86_64
+cryptography 50.0.2
+opencv 5.0.0

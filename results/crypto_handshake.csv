@@ -1,0 +1,7 @@
+scheme,operation,reps,median_ms,mean_ms,p95_ms,forward_secrecy,wire_bytes,qr_codes
+AirLock interactive (X25519 + Ed25519),full handshake,500,0.9349,0.9597,1.0696,yes,390,2
+AirLock one-way (X25519 + Ed25519),full handshake,500,0.5758,0.5943,0.675,sender side only,202,2
+"RSA-2048 analogue, with forward secrecy",full handshake,10,75.5768,83.695,112.8227,yes,1784,9
+"RSA-2048 analogue, no forward secrecy",full handshake,50,3.8822,3.9907,4.3692,no,1490,8
+"RSA-3072 analogue, with forward secrecy",full handshake,10,339.4817,333.8144,484.5106,yes,2552,13
+"RSA-3072 analogue, no forward secrecy",full handshake,50,11.5527,11.6418,12.5268,no,2130,11

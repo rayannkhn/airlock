@@ -1,0 +1,17 @@
+# Core cryptography (pyca/cryptography, OpenSSL-backed). Never roll our own.
+cryptography>=43.0
+
+# Signal processing and computer vision
+numpy>=2.0
+opencv-python>=4.10
+qrcode[pil]>=7.4
+
+# Audio transport: sound I/O (needs system PortAudio) and Reed-Solomon ECC
+sounddevice>=0.5
+reedsolo>=1.7
+
+# Benchmarks and charts
+matplotlib>=3.9
+
+# Testing
+pytest>=8.0

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Content Security Policy: the app may only load its own files and may not contact ANY other server. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>AirLock</title>
+<meta name="description" content="Send files between any two devices using only a screen and a camera. Encrypted, signed, offline.">
+<meta name="theme-color" content="#2a62d6">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="app.css">
+<script src="vendor/qrcode-generator-1.4.4.js" defer></script>
+<script src="vendor/jsqr-1.4.0.js" defer></script>
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header id="topbar">
+  <button class="icon-btn" id="backBtn" aria-label="Back" hidden>←</button>
+  <div class="brand">Air<span>Lock</span></div>
+  <div id="offline" class="pill" hidden>Works offline ✓</div>
+</header>
+
+<main>
+  <!-- loading / unsupported -->
+  <section data-screen="loading"><p class="center muted">Starting…</p></section>
+  <section data-screen="unsupported" hidden>
+    <h1>This browser can't run AirLock</h1>
+    <p>Missing: <b id="missing"></b></p>
+    <p class="muted">Update the browser (Chrome, Edge, Firefox or Safari from 2024 or later) and open the app over HTTPS.</p>
+  </section>
+
+  <!-- first run -->
+  <section data-screen="setup" hidden>
+    <h1>Welcome to AirLock</h1>
+    <p class="lead">Send files between any two devices using only a <b>screen</b> and a <b>camera</b>. There's no Wi-Fi, Bluetooth or internet: the file travels as light.</p>
+    <label class="field">Name this device
+      <input id="deviceName" maxlength="40" placeholder="e.g. Rayan's phone" autocomplete="off">
+    </label>
+    <button class="btn big" id="createIdentity">Create my secure identity</button>
+    <p class="muted small">This makes two private keys that never leave this device. Not even this app can read them.</p>
+  </section>
+
+  <!-- home -->
+  <section data-screen="home" hidden>
+    <div class="me card">
+      <div class="muted small">This device</div>
+      <div class="me-name" id="meName"></div>
+      <div class="fp" id="meFp"></div>
+    </div>
+    <div class="actions">
+      <button class="tile" data-go="send"><span class="ico">↑</span><b>Send</b><span>Show a file as QR codes</span></button>
+      <button class="tile" data-go="receive"><span class="ico">↓</span><b>Receive</b><span>Scan with the camera</span></button>
+      <button class="tile" data-go="pair"><span class="ico">⇄</span><b>Pair a device</b><span>Do this once per device</span></button>
+      <button class="tile" data-go="contacts"><span class="ico">☰</span><b>Contacts</b><span id="contactCount">No contacts yet</span></button>
+    </div>
+    <button class="link" data-go="about">How does it work?</button>
+  </section>
+
+  <!-- pair -->
+  <section data-screen="pair" hidden>
+    <h1>Pair two devices</h1>
+    <p class="lead">Do this once, with both devices in front of you. <b>Each device scans the other's code.</b></p>
+    <div class="two">
+      <div class="card">
+        <h2>1 · Show my code</h2>
+        <canvas id="myCardQr" class="qr"></canvas>
+        <div class="muted small">My fingerprint</div>
+        <div class="fp" id="pairMyFp"></div>
+      </div>
+      <div class="card">
+        <h2>2 · Scan their code</h2>
+        <div class="camera"><video id="pairVideo" playsinline muted></video><span id="pairCamMsg">Camera is off</span></div>
+        <button class="btn" id="pairScan">Scan their code</button>
+        <div id="pairFound" hidden>
+          <p><b>Found:</b> <span id="foundName"></span></p>
+          <div class="muted small">Their fingerprint, which must match what their screen shows:</div>
+          <div class="fp" id="foundFp"></div>
+          <label class="field">Save as<input id="foundSaveAs" maxlength="40"></label>
+          <div class="row"><button class="btn ok" id="pairYes">✓ Fingerprints match: save</button><button class="btn quiet" id="pairNo">They differ</button></div>
+        </div>
+        <p class="msg" id="pairMsg"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- contacts -->
+  <section data-screen="contacts" hidden>
+    <h1>Contacts</h1>
+    <p class="lead">Devices you paired with. Only these can send you files, and only they can open what you send them.</p>
+    <ul class="list" id="contactList"></ul>
+    <button class="btn" data-go="pair">Pair a new device</button>
+  </section>
+
+  <!-- send -->
+  <section data-screen="send" hidden>
+    <h1>Send</h1>
+    <div id="sendNoContacts" hidden class="card"><p>Pair with the other device first.</p><button class="btn" data-go="pair">Pair a device</button></div>
+    <div id="sendForm">
+      <label class="field">To<select id="sendTo"></select></label>
+      <label class="field">A file
+        <input type="file" id="sendFile">
+      </label>
+      <label class="field">…or type a message
+        <textarea id="sendText" rows="3" placeholder="e.g. The meeting moved to 3 pm."></textarea>
+      </label>
+      <button class="btn big" id="sendStart">Lock, seal and show as QR codes</button>
+      <p class="muted small">Small files work best (under about 20 KB). Bigger files mean more codes and more time.</p>
+      <p class="msg" id="sendMsg"></p>
+    </div>
+  </section>
+
+  <!-- receive -->
+  <section data-screen="receive" hidden>
+    <h1>Receive</h1>
+    <div class="two">
+      <div>
+        <div class="camera big"><video id="recvVideo" playsinline muted></video><span id="recvCamMsg">Press Start, then point the camera at the other screen.</span></div>
+        <div class="row"><button class="btn" id="recvStart">▶ Start camera</button><button class="btn quiet" id="recvStop" disabled>Stop</button></div>
+        <div class="progress"><div id="recvBar"></div></div>
+        <div class="muted small" id="recvCount">Not started</div>
+      </div>
+      <div>
+        <ol class="steps" id="recvSteps"></ol>
+        <div class="confirm" id="recvConfirm" hidden>
+          <b>Does the sender's screen show this code?</b>
+          <div class="code" id="recvCode"></div>
+          <div class="row"><button class="btn ok" id="recvYes">✓ Yes, they match</button><button class="btn bad" id="recvNo">✗ No</button></div>
+        </div>
+        <div id="recvResult"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- about -->
+  <section data-screen="about" hidden>
+    <h1>How AirLock works</h1>
+    <ol class="how">
+      <li><b>Pair once.</b> Two devices scan each other's code and you compare fingerprints. Now each knows the other's public keys.</li>
+      <li><b>Lock.</b> The file is encrypted (AES-256-GCM) with a one-time key that only the receiver's device can recreate (X25519).</li>
+      <li><b>Seal.</b> The sender signs it (Ed25519), so nobody can change it or pretend to be the sender.</li>
+      <li><b>Show.</b> The locked file is cut into small pieces, and each piece is one QR code on a looping screen.</li>
+      <li><b>Check.</b> The receiver checks the seal, that the transfer is fresh, and that it has never been received before (no replays). It then unlocks each piece and checks the whole file's fingerprint (SHA-256).</li>
+      <li><b>Confirm.</b> Both screens show the same short code. Only after a person confirms it is the file handed over.</li>
+    </ol>
+    <div class="card">
+      <h2>Why it's safe to show on screen</h2>
+      <p>Anyone can film the codes, but all they get is locked data. The key never appears on screen, and changed or replayed codes are rejected.</p>
+      <p class="muted small">After the first visit the app works with no internet at all, and its security policy blocks it from contacting any server.</p>
+    </div>
+    <div class="card">
+      <h2>This device</h2>
+      <button class="btn quiet" id="wipe">Reset this device (new keys, forget contacts)</button>
+      <p class="muted small" id="version"></p>
+    </div>
+  </section>
+</main>
+
+<!-- full-screen QR player (sender) -->
+<div id="player" hidden>
+  <div class="player-top">
+    <div><div class="small">Verification code</div><div class="code" id="playCode"></div></div>
+    <div class="player-to" id="playTo"></div>
+  </div>
+  <canvas id="playQr" class="qr-play"></canvas>
+  <div class="player-bottom">
+    <span id="playCount"></span>
+    <div class="row">
+      <button class="btn quiet" id="slower">Slower</button>
+      <button class="btn quiet" id="faster">Faster</button>
+      <button class="btn bad" id="playStop">Stop</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
