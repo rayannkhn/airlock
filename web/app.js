@@ -3,7 +3,7 @@
 import * as A from "./airlock-core.js";
 import * as S from "./store.js";
 
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let me = null;           // this device's identity
@@ -25,6 +25,7 @@ const FRIENDLY = {
   too_big: "Rejected: the file is too large.",
   bad_key: "Rejected: the sender's key is invalid.",
   version: "Rejected: this transfer was made by an incompatible AirLock version.",
+  insecure_refused: "Rejected: this transfer has NO integrity protection (insecure demo mode), so AirLock refuses it. Tick “accept insecure demo transfers” in the attack lab only to show the attack.",
 };
 const friendly = (e) => FRIENDLY[e?.code] || `Stopped: ${e?.message || e}`;
 
@@ -36,7 +37,7 @@ function go(screen, { push = true } = {}) {
   if (push && current !== "loading") history.push(current);
   current = screen;
   document.querySelectorAll("main > section").forEach((s) => (s.hidden = s.dataset.screen !== screen));
-  $("backBtn").hidden = !["pair", "contacts", "send", "receive", "about"].includes(screen);
+  $("backBtn").hidden = !["pair", "contacts", "send", "receive", "about", "crack"].includes(screen);
   enter(screen);
   window.scrollTo(0, 0);
 }
@@ -50,6 +51,7 @@ function enter(screen) {
   if (screen === "contacts") renderContacts();
   if (screen === "send") renderSend();
   if (screen === "receive") resetReceive();
+  if (screen === "crack") renderCrack();
   if (screen === "about") $("version").textContent = `AirLock web ${APP_VERSION} · protocol v${A.PROTOCOL_VERSION}`;
 }
 function leave(screen) {
@@ -206,23 +208,31 @@ $("sendStart").onclick = async () => {
   const peer = peers[Number($("sendTo").value)];
   const file = $("sendFile").files[0];
   const text = $("sendText").value;
+  const projector = $("projector").checked, insecure = $("insecure").checked;
   let name, data;
   if (file) { name = file.name; data = new Uint8Array(await file.arrayBuffer()); }
   else if (text.trim()) { name = "message.txt"; data = new TextEncoder().encode(text); }
   else { $("sendMsg").textContent = "Choose a file or type a message first."; $("sendMsg").className = "msg bad"; return; }
   if (data.length > 200 * 1024) { $("sendMsg").textContent = "That file is large: it would need thousands of codes. Try something under 20 KB."; $("sendMsg").className = "msg bad"; return; }
+  if (insecure && data.length > 1000) { $("sendMsg").textContent = "The insecure demo is for short messages only (type one, like “Pay Ali 100 PKR”)."; $("sendMsg").className = "msg bad"; return; }
   $("sendMsg").textContent = "Locking and sealing…"; $("sendMsg").className = "msg";
   const { seal, session } = await A.createSeal(me, peer);
-  const packets = [seal, ...(await A.buildTransfer(me, session, name, data))];
-  startPlayer(packets.map((p) => makeQr(A.b45encode(p))), A.formatSas(session.sas), peer.name, name);
+  const body = insecure
+    ? [await A.labInsecurePacket(session, data)]                          // demo: encrypted, NOT authenticated
+    : await A.buildTransfer(me, session, name, data, projector ? 100 : A.QR_CHUNK_SIZE); // smaller pieces = bigger squares
+  startPlayer([seal, ...body].map((p) => makeQr(A.b45encode(p))), A.formatSas(session.sas), peer.name, name, { projector, insecure });
 };
 
 let playTimer = null, wakeLock = null, codesPerSecond = 4;
-async function startPlayer(qrs, code, toName, fileName) {
+async function startPlayer(qrs, code, toName, fileName, { projector = false, insecure = false } = {}) {
   $("player").hidden = false;
+  $("player").classList.toggle("projector", projector);
+  $("playInsecure").hidden = !insecure;
+  codesPerSecond = projector ? 2 : 4;
   $("playCode").textContent = code;
   $("playTo").textContent = `to ${toName} · ${fileName}`;
   try { wakeLock = await navigator.wakeLock?.request("screen"); } catch { /* not supported: fine */ }
+  try { if (projector) await document.documentElement.requestFullscreen?.(); } catch { /* fine */ }
   let i = 0;
   const tick = () => {
     drawQr($("playQr"), qrs[i]);
@@ -232,14 +242,17 @@ async function startPlayer(qrs, code, toName, fileName) {
   };
   tick();
 }
-function stopPlayer() { clearTimeout(playTimer); playTimer = null; $("player").hidden = true; wakeLock?.release?.(); wakeLock = null; }
+function stopPlayer() {
+  clearTimeout(playTimer); playTimer = null; $("player").hidden = true; wakeLock?.release?.(); wakeLock = null;
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+}
 $("playStop").onclick = stopPlayer;
 $("slower").onclick = () => { codesPerSecond = Math.max(1, codesPerSecond - 1); };
 $("faster").onclick = () => { codesPerSecond = Math.min(10, codesPerSecond + 1); };
 
-// ---------------------------------------------------------------- receive
+// ---------------------------------------------------------------- receive (+ attack lab)
 
-let rx = null; // { scanner, session, reasm, pending[], seal, done }
+let rx = null; // { scanner, session, reasm, pending[], done, cells[], injectTimer, logged{} }
 function step(kind, text) {
   const li = document.createElement("li"); li.className = kind;
   li.innerHTML = `<span class="ic">${{ ok: "✓", bad: "✗", ask: "?", info: "•" }[kind]}</span><span></span>`;
@@ -249,11 +262,13 @@ function step(kind, text) {
 function resetReceive() {
   $("recvSteps").innerHTML = ""; $("recvResult").innerHTML = ""; $("recvConfirm").hidden = true;
   $("recvBar").style.width = "0"; $("recvCount").textContent = "Not started";
+  $("mosaic").innerHTML = ""; $("counters").hidden = true;
   $("recvStart").disabled = false; $("recvStop").disabled = true;
   step("info", "Press Start, then point the camera at the sender's screen.");
 }
 function stopReceive(withMessage = true) {
   if (!rx) return;
+  clearInterval(rx.injectTimer);
   rx.scanner?.stop(); rx.reasm?.discard();
   if (withMessage && !rx.done) step("bad", "Stopped. Nothing was saved.");
   rx = null;
@@ -266,40 +281,122 @@ function failReceive(e) {
   if (rx) rx.done = true;
   stopReceive(false);
 }
-async function handlePacketText(text) {
-  if (!rx || rx.done) return;
-  let bytes;
-  try { bytes = A.b45decode(text); } catch { return; } // a QR code that isn't ours
-  if (!rx.session) {
-    if (rx.scanner && rx.scanner.reads === 1) step("info", "First QR code read. Looking for the seal (frame 0)…");
-    let pkt;
-    try { pkt = A.decodePacket(bytes); } catch { return; }
-    if (pkt.type !== A.PacketType.SEAL) { if (rx.pending.length < 4096) rx.pending.push(bytes); return; }
-    try { rx.session = await A.openSeal(me, await S.getPeers(), bytes, S.isUsed); }
-    catch (e) { failReceive(e); return; }
-    const who = rx.session.peerName;
-    step("ok", `From ${who}: a paired contact.`);
-    step("ok", `${who}'s signature is valid: nobody altered the seal.`);
-    step("ok", "Fresh, and never received before (not a replay).");
-    step("ok", "Secret key computed. Only this device can unlock the file.");
-    rx.reasm = new A.Reassembler(rx.session);
-    for (const p of rx.pending) await feed(p);
-    rx.pending = [];
-  } else {
-    await feed(bytes);
-  }
-  if (rx?.reasm?.complete && !rx.done) await finishReceive();
+function logOnce(key, kind, text) { if (rx && !rx.logged[key]) { rx.logged[key] = true; step(kind, text); } }
+
+// --- mosaic: one square per piece, lit as it arrives (in whatever order the camera catches it)
+function buildMosaic(total) {
+  const box = $("mosaic"); box.innerHTML = "";
+  rx.cells = Array.from({ length: total }, () => { const i = document.createElement("i"); box.appendChild(i); return i; });
+  $("counters").hidden = false;
 }
-async function feed(bytes) {
-  try { await rx.reasm.feed(bytes); } catch (e) { failReceive(e); return; }
+function flash(seq, cls) {
+  const cell = rx?.cells?.[seq];
+  if (!cell || cell.classList.contains("got")) return;
+  cell.classList.add(cls);
+  setTimeout(() => cell.classList.remove(cls), 350);
+}
+function showStats() {
+  const st = rx?.reasm?.stats; if (!st) return;
+  $("cAcc").textContent = st.accepted; $("cDup").textContent = st.duplicates;
+  $("cNoise").textContent = st.crc; $("cBad").textContent = st.aead + st.rejected;
   const r = rx.reasm;
   if (r.total) {
     $("recvBar").style.width = `${Math.round((100 * r.received) / r.total)}%`;
     $("recvCount").textContent = `${r.received} of ${r.total} pieces · ${rx.scanner?.reads ?? 0} QR reads`;
   }
 }
+
+// --- the attacker in the channel (only when the lab controls are set)
+function attack(bytes, pkt) {
+  if (pkt.type !== A.PacketType.DATA && pkt.type !== A.PacketType.LAB_INSECURE) return { bytes };
+  if ($("rewrite").checked && pkt.seq === 1) {
+    const guess = $("guess").value, from = $("from").value, to = $("to").value;
+    const at = guess.indexOf(from);
+    if (at >= 0 && from.length === to.length && from.length > 0) {
+      const enc = new TextEncoder();
+      return { bytes: A.malleate(bytes, enc.encode(guess.slice(0, at)).length, enc.encode(from), enc.encode(to)), edited: true };
+    }
+  }
+  if (pkt.type === A.PacketType.DATA && Math.random() * 100 < Number($("tamper").value)) {
+    return { bytes: A.corruptPacket(bytes), tampered: true };
+  }
+  return { bytes };
+}
+
+async function processPacket(raw, { forged = false } = {}) {
+  if (!rx || rx.done) return;
+  let pkt;
+  try { pkt = A.decodePacket(raw); } catch { if (rx.reasm) { await rx.reasm.feed(raw); showStats(); } return; }
+  const { bytes, edited, tampered } = forged ? { bytes: raw } : attack(raw, pkt);
+  if (pkt.type === A.PacketType.LAB_INSECURE) { await receiveInsecure(bytes, edited); return; }
+  const r = rx.reasm;
+  const before = { ...r.stats };
+  try { await r.feed(bytes); } catch (e) { failReceive(e); return; }
+  if (r.total && !rx.cells) buildMosaic(r.total);
+  if (r.stats.accepted > before.accepted) rx.cells?.[pkt.seq]?.classList.add("got");
+  else if (r.stats.duplicates > before.duplicates) flash(pkt.seq, "flash-dup");
+  else if (r.stats.aead > before.aead) {
+    flash(pkt.seq, "flash-bad");
+    if (edited) logOnce("edit", "bad", "Mallory’s edit was caught: the changed piece failed its authentication tag and was thrown away. AirLock delivers nothing rather than a lie.");
+    else if (tampered) logOnce("tamper", "bad", "A tampered piece was rejected (authentication tag mismatch). The loop will bring the genuine piece again.");
+    else if (forged) logOnce("forged", "bad", "Fake pieces are being injected and rejected. 32 of them and AirLock aborts the transfer.");
+  }
+  showStats();
+  if (r.complete && !rx.done) await finishReceive();
+}
+
+async function receiveInsecure(bytes, edited) {
+  if (!$("allowInsecure").checked) { failReceive({ code: "insecure_refused" }); return; }
+  rx.done = true;
+  clearInterval(rx.injectTimer);
+  rx.scanner?.stop();
+  const text = new TextDecoder().decode(await A.labOpenInsecure(rx.session, A.decodePacket(bytes)));
+  step("bad", "Decrypted, but this demo transfer has NO integrity check: nothing can tell whether it was changed on the way.");
+  const box = document.createElement("div"); box.className = "banner bad";
+  box.innerHTML = `<div>⚠ Received (insecure demo, unverified):</div><div class="lab-msg"></div><div class="small"></div>`;
+  box.querySelector(".lab-msg").textContent = text;
+  box.lastChild.textContent = edited
+    ? "Mallory changed this in transit without ever reading it (bit-flipping on unauthenticated encryption). Real AirLock rejects exactly this edit."
+    : "Nothing flagged it, and nothing could have. That is the problem with encryption alone.";
+  $("recvResult").replaceChildren(box);
+  $("recvStart").disabled = false; $("recvStop").disabled = true;
+  rx = null;
+}
+
+function startInjection() {
+  if (!rx) return;
+  clearInterval(rx.injectTimer);
+  const n = Number($("inject").value);
+  if (!n || !rx.session || !rx.reasm?.total) return;
+  rx.injectTimer = setInterval(() => processPacket(A.forgedPacket(rx.session.sid, rx.reasm.total), { forged: true }), 1000 / n);
+}
+$("tamper").oninput = () => { $("tamperVal").textContent = `${$("tamper").value}%`; };
+$("inject").oninput = () => { $("injectVal").textContent = $("inject").value; startInjection(); };
+
+async function handlePacketText(text) {
+  if (!rx || rx.done) return;
+  let bytes;
+  try { bytes = A.b45decode(text); } catch { return; } // a QR code that isn't ours
+  if (rx.session) { await processPacket(bytes); if (rx && !rx.injectTimer) startInjection(); return; }
+  if (rx.scanner && rx.scanner.reads === 1) step("info", "First QR code read. Looking for the seal (frame 0)…");
+  let pkt;
+  try { pkt = A.decodePacket(bytes); } catch { return; }
+  if (pkt.type !== A.PacketType.SEAL) { if (rx.pending.length < 4096) rx.pending.push(bytes); return; }
+  try { rx.session = await A.openSeal(me, await S.getPeers(), bytes, S.isUsed); }
+  catch (e) { failReceive(e); return; }
+  const who = rx.session.peerName;
+  step("ok", `From ${who}: a paired contact.`);
+  step("ok", `${who}'s signature is valid: nobody altered the seal.`);
+  step("ok", "Fresh, and never received before (not a replay).");
+  step("ok", "Secret key computed. Only this device can unlock the file.");
+  rx.reasm = new A.Reassembler(rx.session);
+  const early = rx.pending; rx.pending = [];
+  for (const p of early) await processPacket(p);
+  startInjection();
+}
 async function finishReceive() {
   rx.done = true;
+  clearInterval(rx.injectTimer);
   rx.scanner?.stop();
   let file;
   try { file = await rx.reasm.finalize(); } catch (e) { rx.done = false; failReceive(e); return; }
@@ -343,13 +440,39 @@ function showFile(file, from) {
 $("recvStart").onclick = async () => {
   resetReceive();
   $("recvSteps").innerHTML = "";
-  rx = { pending: [], done: false };
+  rx = { pending: [], done: false, logged: {}, cells: null, injectTimer: null };
   rx.scanner = new Scanner($("recvVideo"), $("recvCamMsg"), handlePacketText);
   step("info", "Camera on. Point it at the sender's screen, 20–40 cm away.");
   try { await rx.scanner.start(); } catch (e) { failReceive({ message: cameraError(e) }); return; }
   $("recvStart").disabled = true; $("recvStop").disabled = false;
 };
 $("recvStop").onclick = () => stopReceive(true);
+
+// ---------------------------------------------------------------- brute-force calculator
+
+const NAMES = ["1", "10", "100", "1,000", "10,000", "100,000", "1 million", "10 million", "100 million", "1 billion", "10 billion", "100 billion", "1 trillion"];
+const SUP = { "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴", "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹", "-": "⁻" };
+function sci(x) { const e = Math.floor(Math.log10(x)); const m = x / 10 ** e; return `${m.toFixed(1)} × 10${String(e).replace(/./g, (c) => SUP[c])}`; }
+function duration(seconds) {
+  if (seconds < 1) return "under a second";
+  const units = [["seconds", 60], ["minutes", 60], ["hours", 24], ["days", 365.25]];
+  let v = seconds;
+  for (const [name, next] of units) { if (v < next) return `${Math.round(v)} ${name}`; v /= next; }
+  return v < 1e6 ? `${Math.round(v).toLocaleString()} years` : `${sci(v)} years`;
+}
+function renderCrack() {
+  const e = Number($("machines").value), machines = 10 ** e, perSecond = machines * 1e10;
+  $("machinesVal").textContent = NAMES[e];
+  $("tWeak").textContent = duration(26 ** 8 / 2 / perSecond);
+  $("tStrong").textContent = duration(94 ** 12 / 2 / perSecond);
+  const keyYears = 2 ** 127 / perSecond / (365.25 * 24 * 3600);
+  $("tKey").textContent = duration(2 ** 127 / perSecond);
+  const ages = keyYears / 1.38e10; // the universe is about 13.8 billion years old
+  $("tKeyNote").textContent = ages >= 10 ? `${sci(ages)} × the age of the universe`
+    : ages >= 1 ? `${ages.toFixed(1)} × the age of the universe`
+    : `${Math.max(1, Math.round(ages * 100))}% of the age of the universe`;
+}
+$("machines").oninput = renderCrack;
 
 // ---------------------------------------------------------------- setup & start
 
@@ -379,7 +502,12 @@ async function start() {
   if (new URLSearchParams(location.search).has("debug")) {
     // Test hook (only with ?debug in the URL): feed QR texts without a camera.
     globalThis.airlockDebug = {
-      feed: async (text) => { rx ??= { pending: [], done: false }; await handlePacketText(text); },
+      feed: async (text) => { rx ??= { pending: [], done: false, logged: {}, cells: null, injectTimer: null }; await handlePacketText(text); },
+      insecureTexts: async (peerIndex, text) => {
+        const peer = (await S.getPeers())[peerIndex];
+        const { seal, session } = await A.createSeal(me, peer);
+        return [seal, await A.labInsecurePacket(session, new TextEncoder().encode(text))].map(A.b45encode);
+      },
       transferTexts: async (peerIndex, name, text) => {
         const peer = (await S.getPeers())[peerIndex];
         const { seal, session } = await A.createSeal(me, peer);

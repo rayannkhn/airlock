@@ -38,6 +38,15 @@ encrypts and JavaScript decrypts, and the reverse). Private keys are
 non-extractable WebCrypto keys, and a Content Security Policy blocks the app
 from contacting any server.
 
+**Demo features (v1.1):**
+- **Projector mode:** bigger, slower codes, so one screen can broadcast to a whole room.
+- **Mosaic:** one square per piece, lighting up as the camera catches it.
+- **Attack lab** (on the Receive screen):
+  - live sliders to tamper with pieces or inject fakes;
+  - a "Mallory rewrites the message" attack;
+  - an insecure comparison mode (AES-CTR with no integrity) where that rewrite *succeeds*.
+- **"Can it be cracked?"** brute-force calculator.
+
 Run it locally (`localhost` counts as secure, so the camera works):
 ```bash
 cd web && python3 -m http.server 8800      # then open http://127.0.0.1:8800/

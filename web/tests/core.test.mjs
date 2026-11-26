@@ -89,3 +89,36 @@ test("filenames are sanitised like the Python version", () => {
   assert.equal(A.sanitizeFilename("CON.txt"), "_CON.txt");
   assert.equal(A.sanitizeFilename(""), "received.bin");
 });
+
+test("attack lab: CTR is malleable, GCM rejects the same edit", async () => {
+  const alice = await A.generateIdentity("Alice"), bob = await A.generateIdentity("Bob");
+  const msg = te.encode("Pay Ali 100 PKR");
+  const before = te.encode("100"), after = te.encode("999"), offset = 8;
+
+  // Insecure demo: Mallory changes the amount without being able to read anything.
+  const { seal, session } = await A.createSeal(alice, peerOf(bob));
+  const lab = A.malleate(await A.labInsecurePacket(session, msg), offset, before, after);
+  const s = await A.openSeal(bob, [peerOf(alice)], seal, notUsed);
+  const got = new TextDecoder().decode(await A.labOpenInsecure(s, A.decodePacket(lab)));
+  assert.equal(got, "Pay Ali 999 PKR");
+
+  // Real AirLock: the identical edit on the AES-GCM packet fails authentication.
+  const t = await transfer(alice, bob, msg);
+  const s2 = await A.openSeal(bob, [peerOf(alice)], t.seal, notUsed);
+  const r = new A.Reassembler(s2);
+  await r.feed(t.packets[0]);
+  assert.equal(await r.feed(A.malleate(t.packets[1], offset, before, after)), false);
+  assert.equal(r.stats.aead, 1);
+  await r.feed(t.packets[1]);                 // the genuine piece still goes through
+  assert.deepEqual((await r.finalize()).data, msg);
+});
+
+test("attack lab: corrupted and forged pieces are rejected, flood aborts", async () => {
+  const alice = await A.generateIdentity("Alice"), bob = await A.generateIdentity("Bob");
+  const t = await transfer(alice, bob, A.randomBytes(900));
+  const s = await A.openSeal(bob, [peerOf(alice)], t.seal, notUsed);
+  const r = new A.Reassembler(s);
+  assert.equal(await r.feed(A.corruptPacket(t.packets[2])), false);
+  assert.equal(r.stats.aead, 1);
+  await assert.rejects((async () => { for (let i = 0; i < 40; i++) await r.feed(A.forgedPacket(s.sid, t.packets.length)); })(), { code: "tampering" });
+});

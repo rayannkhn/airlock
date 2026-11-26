@@ -26,7 +26,7 @@ export const MAX_FILE_SIZE = 16 * 1024 * 1024;
 export const MAX_AEAD_FAILURES = 32;
 export const MAX_AGE_SECONDS = 24 * 3600;
 export const MAX_FUTURE_SKEW = 10 * 60;
-export const PacketType = { HELLO: 1, REPLY: 2, FINISH: 3, MANIFEST: 4, DATA: 5, RECEIPT: 6, SEAL: 7 };
+export const PacketType = { HELLO: 1, REPLY: 2, FINISH: 3, MANIFEST: 4, DATA: 5, RECEIPT: 6, SEAL: 7, LAB_INSECURE: 8 };
 
 const LABEL_SEAL = te.encode("airlock-seal");
 const LABEL_MANIFEST = te.encode("airlock-manifest");
@@ -398,6 +398,56 @@ export class Reassembler {
     return { filename: sanitizeFilename(this.manifest.filename), data };
   }
   discard() { this.chunks.clear(); this.buffered = 0; }
+}
+
+// ---------------------------------------------------------------- ATTACK LAB (demo only, never used for real transfers)
+//
+// LAB_INSECURE packets encrypt WITHOUT integrity: AES-CTR, no tag, no signed
+// manifest, no hash. They exist only to demonstrate live that "encrypted" does
+// not mean "unchangeable": CTR ciphertext is malleable, so an attacker who
+// cannot read the message can still flip chosen bits of it. The real protocol
+// (AES-GCM + signed manifest + SHA-256) rejects the identical edit.
+// The Python package does not accept this packet type, and neither does the
+// app unless the receiver explicitly ticks "accept insecure demo transfers".
+
+async function labCounter(iv) { return concat(makeNonce(iv, 1), u32(1)); } // 16-byte CTR block
+
+/** Sender, insecure demo: one LAB_INSECURE packet holding `data`, encrypted but NOT authenticated. */
+export async function labInsecurePacket(session, data) {
+  if (data.length > 1000) throw new AirLockError("lab", "insecure demo is for short messages only");
+  const key = await subtle.importKey("raw", session.keys.kIR, "AES-CTR", false, ["encrypt"]);
+  const ct = new Uint8Array(await subtle.encrypt({ name: "AES-CTR", counter: await labCounter(session.keys.ivIR), length: 32 }, key, data));
+  return encodePacket({ type: PacketType.LAB_INSECURE, sid: session.sid, seq: 1, total: 1, payload: ct });
+}
+
+/** Receiver, insecure demo: decrypts with no integrity check whatsoever (that is the point). */
+export async function labOpenInsecure(session, pkt) {
+  if (!equalBytes(pkt.sid, session.sid)) throw new AirLockError("session", "packet belongs to another session");
+  const key = await subtle.importKey("raw", session.keys.kIR, "AES-CTR", false, ["decrypt"]);
+  return new Uint8Array(await subtle.decrypt({ name: "AES-CTR", counter: await labCounter(session.keys.ivIR), length: 32 }, key, pkt.payload));
+}
+
+/** Attacker: XOR (before ^ after) into the ciphertext at a plaintext offset, then fix the CRC.
+ *  Works on both CTR and GCM packets because both are counter-mode underneath; only GCM notices. */
+export function malleate(raw, offset, before, after) {
+  const pkt = decodePacket(raw);
+  const payload = pkt.payload.slice();
+  for (let i = 0; i < before.length && offset + i < payload.length; i++) payload[offset + i] ^= before[i] ^ after[i];
+  return encodePacket({ type: pkt.type, sid: pkt.sid, seq: pkt.seq, total: pkt.total, payload });
+}
+
+/** Attacker: flip one random byte of a packet's ciphertext and recompute the CRC (CRC is not security). */
+export function corruptPacket(raw) {
+  const pkt = decodePacket(raw);
+  const payload = pkt.payload.slice();
+  payload[Math.floor(Math.random() * payload.length)] ^= 1 + Math.floor(Math.random() * 255);
+  return encodePacket({ type: pkt.type, sid: pkt.sid, seq: pkt.seq, total: pkt.total, payload });
+}
+
+/** Attacker: a forged data packet for a session (right header, random ciphertext). */
+export function forgedPacket(sid, total) {
+  const seq = 1 + Math.floor(Math.random() * Math.max(1, total - 1));
+  return encodePacket({ type: PacketType.DATA, sid, seq, total, payload: randomBytes(166) });
 }
 
 /** Startup check: does this browser have everything AirLock needs? */

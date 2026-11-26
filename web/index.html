@@ -58,8 +58,9 @@
       <button class="tile" data-go="receive"><span class="ico">↓</span><b>Receive</b><span>Scan with the camera</span></button>
       <button class="tile" data-go="pair"><span class="ico">⇄</span><b>Pair a device</b><span>Do this once per device</span></button>
       <button class="tile" data-go="contacts"><span class="ico">☰</span><b>Contacts</b><span id="contactCount">No contacts yet</span></button>
+      <button class="tile" data-go="crack"><span class="ico">⏳</span><b>Can it be cracked?</b><span>Brute-force calculator</span></button>
+      <button class="tile" data-go="about"><span class="ico">?</span><b>How it works</b><span>The idea in six steps</span></button>
     </div>
-    <button class="link" data-go="about">How does it work?</button>
   </section>
 
   <!-- pair -->
@@ -109,6 +110,8 @@
       <label class="field">…or type a message
         <textarea id="sendText" rows="3" placeholder="e.g. The meeting moved to 3 pm."></textarea>
       </label>
+      <label class="check"><input type="checkbox" id="projector"> <span><b>Projector mode</b>: bigger, slower codes for a big screen and a whole room</span></label>
+      <label class="check danger"><input type="checkbox" id="insecure"> <span><b>⚠ Insecure demo</b>: encrypt but with NO integrity check (AES-CTR, no signature). Only for showing the “Mallory” attack. Short messages only.</span></label>
       <button class="btn big" id="sendStart">Lock, seal and show as QR codes</button>
       <p class="muted small">Small files work best (under about 20 KB). Bigger files mean more codes and more time.</p>
       <p class="msg" id="sendMsg"></p>
@@ -124,6 +127,23 @@
         <div class="row"><button class="btn" id="recvStart">▶ Start camera</button><button class="btn quiet" id="recvStop" disabled>Stop</button></div>
         <div class="progress"><div id="recvBar"></div></div>
         <div class="muted small" id="recvCount">Not started</div>
+        <div class="mosaic" id="mosaic" aria-label="Pieces received"></div>
+        <div class="counters" id="counters" hidden>
+          <span class="c ok"><b id="cAcc">0</b> accepted</span>
+          <span class="c"><b id="cDup">0</b> repeats</span>
+          <span class="c"><b id="cNoise">0</b> noise</span>
+          <span class="c bad"><b id="cBad">0</b> forged / tampered, rejected</span>
+        </div>
+        <details class="lab" id="lab">
+          <summary>🧪 Attack lab: play the attacker live</summary>
+          <p class="muted small">Simulates Mallory sitting between the screen and this camera. Everything here attacks this device’s own transfer.</p>
+          <label class="slider">Mallory flips bits in <b id="tamperVal">0%</b> of the pieces
+            <input type="range" id="tamper" min="0" max="60" step="5" value="0"></label>
+          <label class="slider">Mallory injects <b id="injectVal">0</b> fake pieces per second <span class="muted small">(abort after 32)</span>
+            <input type="range" id="inject" min="0" max="10" step="1" value="0"></label>
+          <label class="check"><input type="checkbox" id="rewrite"> <span><b>Mallory rewrites the message</b> without reading it: she guesses it says <input class="mini" id="guess" value="Pay Ali 100 PKR" size="16"> and changes <input class="mini" id="from" value="100" size="4"> to <input class="mini" id="to" value="999" size="4"></span></label>
+          <label class="check danger"><input type="checkbox" id="allowInsecure"> <span>Accept <b>insecure demo transfers</b> (no integrity check), to show what AirLock prevents</span></label>
+        </details>
       </div>
       <div>
         <ol class="steps" id="recvSteps"></ol>
@@ -135,6 +155,20 @@
         <div id="recvResult"></div>
       </div>
     </div>
+  </section>
+
+  <!-- crack -->
+  <section data-screen="crack" hidden>
+    <h1>Can someone just guess the key?</h1>
+    <p class="lead">Drag the slider: give the attacker more and more computers, each trying 10 billion keys per second.</p>
+    <label class="slider big">Attacker’s computers: <b id="machinesVal">1</b>
+      <input type="range" id="machines" min="0" max="12" step="1" value="0"></label>
+    <div class="crack">
+      <div class="card"><div class="muted small">A weak password (8 lowercase letters)</div><div class="crack-num bad" id="tWeak"></div><div class="muted small">26⁸ ≈ 2 × 10¹¹ guesses</div></div>
+      <div class="card"><div class="muted small">A strong password (12 random characters)</div><div class="crack-num" id="tStrong"></div><div class="muted small">94¹² ≈ 5 × 10²³ guesses</div></div>
+      <div class="card"><div class="muted small">An AirLock key (128-bit security level)</div><div class="crack-num ok" id="tKey"></div><div class="muted small" id="tKeyNote"></div></div>
+    </div>
+    <p class="muted small">Average time = half the possibilities ÷ (computers × 10¹⁰ per second). AirLock’s weakest link is X25519, which offers 128-bit security; AES-256 itself is 256-bit. The danger is never guessing the key: it is weak passwords, stolen devices and bugs.</p>
   </section>
 
   <!-- about -->
@@ -167,6 +201,7 @@
     <div><div class="small">Verification code</div><div class="code" id="playCode"></div></div>
     <div class="player-to" id="playTo"></div>
   </div>
+  <div class="insecure-banner" id="playInsecure" hidden>⚠ INSECURE DEMO MODE: no integrity check</div>
   <canvas id="playQr" class="qr-play"></canvas>
   <div class="player-bottom">
     <span id="playCount"></span>

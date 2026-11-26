@@ -420,3 +420,21 @@ tablets and laptops can all act as sender and receiver.
   checks that each side decodes the other's QR codes.
 - **Replay store:** IndexedDB (`used` store), with the same 24-hour window
   and pruning as Python.
+
+### 12.1 Attack lab (demo features, v1.1)
+
+The Receive screen has an attack lab that attacks the device's *own*
+incoming transfer:
+- **Tamper slider:** flips a byte in X% of the pieces and recomputes the
+  CRC. Each one is rejected by the GCM tag, and the loop re-delivers it.
+- **Inject slider:** adds forged pieces. The transfer aborts after 32.
+- **Mallory rewrite:** XORs (guess ⊕ target) into the ciphertext at the
+  guessed offset.
+
+For comparison, the sender can make a **LAB_INSECURE** packet (type 8):
+AES-CTR, with no tag, no signed manifest and no hash. There the same
+rewrite turns "Pay Ali 100" into "Pay Ali 999" without the key. That is
+the textbook malleability of unauthenticated counter-mode encryption.
+Receivers refuse type 8 unless "accept insecure demo transfers" is ticked.
+The Python package never accepts it. `web/tests/core.test.mjs` checks both
+outcomes.

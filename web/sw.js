@@ -1,7 +1,7 @@
 // Service worker: stores every app file on the device at install time, then serves
 // them from that cache. After the first visit AirLock works with no network at all.
 // Bump CACHE when any app file changes, so devices pick up the new version.
-const CACHE = "airlock-v1.0.0";
+const CACHE = "airlock-v1.1.0";
 const FILES = [
   "./", "index.html", "app.css", "app.js", "airlock-core.js", "store.js", "manifest.webmanifest",
   "vendor/qrcode-generator-1.4.4.js", "vendor/jsqr-1.4.0.js",

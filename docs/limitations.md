@@ -79,6 +79,9 @@ How the demo works with this hardware:
 - **Browser requirement:** WebCrypto Ed25519 and X25519 (current Chrome,
   Edge, Safari and Firefox). Older browsers show an "unsupported" screen
   rather than failing silently.
+- **Attack lab:** the insecure comparison mode (type 8, AES-CTR with no
+  integrity) exists only for demonstrations. It is refused unless the
+  receiver explicitly ticks the option.
 - **One-way mode only**, so the receiver-key forward-secrecy caveat (T19)
   applies to the app as well.
 
